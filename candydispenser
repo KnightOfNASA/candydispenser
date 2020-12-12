@@ -1,0 +1,160 @@
+from board import LED
+from machine import Pin
+from time import sleep
+import time
+from hcsr04 import HCSR04
+from machine import Pin,I2C
+from network import WLAN, STA_IF
+from network import mDNS
+from mqttclient import MQTTClient
+import network
+import sys
+#
+#The first sensor detects if a hand is waved between 10cm and 40 cm
+#the second sensor detects if the box is empty
+sensor1 = HCSR04(trigger_pin=5, echo_pin=4,echo_timeout_us=1000000)
+sensor2 = HCSR04(trigger_pin=25, echo_pin=26, echo_timeout_us=1000000)
+led = Pin(27, mode=Pin.OUT)
+# Stepper pins
+IN1pin = 17
+IN2pin = 16
+IN3pin = 19
+IN4pin = 18
+in1 = Pin(IN1pin, mode = Pin.OUT)
+in2 = Pin(IN2pin, mode = Pin.OUT)
+in3 = Pin(IN3pin, mode = Pin.OUT)
+in4 = Pin(IN4pin, mode = Pin.OUT)
+
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+ip = wlan.ifconfig()[0]
+if ip == '0.0.0.0':
+    print("no wifi connection")
+    sys.exit()
+else:
+    print("connected to WiFi at IP", ip)
+
+# Set up Adafruit connection
+adafruitIoUrl = 'io.adafruit.com'
+adafruitUsername = 'CHANGE ME'
+adafruitAioKey = 'CHANGE ME'
+
+# Define callback function
+def sub_cb(topic, msg):
+    print((topic, msg))
+
+# Connect to Adafruit server
+print("Connecting to Adafruit")
+mqtt = MQTTClient(adafruitIoUrl, port='1883', user=adafruitUsername, password=adafruitAioKey)
+time.sleep(0.5)
+print("Connected!")
+
+# This will set the function sub_cb to be called when mqtt.check_msg() checks
+# that there is a message pending
+mqtt.set_callback(sub_cb)
+feedName = "CHANGE ME"
+
+sendCandyMessage = False #no candy message sent
+i=0
+positive=0
+negative=0
+y=0
+
+
+while True:
+    distance2 = sensor2.distance_cm()
+    print(distance2)
+    if distance2 >= 8:
+        candyState = False
+        led(0)
+        if sendCandyMessage == False: #send alert only if there wasnt one
+            testMessage = "Low Candy Alert"
+            mqtt.publish(feedName,testMessage)
+        #for debug
+            #print("Published {} to {}.".format(testMessage,feedName))
+            sendCandyMessage = True
+
+    else: #reset
+        candyState = True
+        sendCandyMessage = False
+    if candyState == True: #only activate if candy box is full
+        led(1)
+        distance1 = sensor1.distance_cm()
+        #print(distance1)
+        if distance1 > 10 and distance1 < 40:
+            #print(distance1)
+            #33 steps
+            #do stepper stuff
+            in1(0)
+            in2(0)
+            in3(0)
+            in4(0)
+            x = 33 #33 steps
+
+            if x>0 and x<=200:
+                for y in range(x,0,-1):
+                    if negative==1:
+                        if i==7:
+                            i=0
+                        else:
+                            i=i+1
+                            y=y+2
+                            negative=0
+                            positive=1
+                            print((x+1)-y)
+                            print(i)
+                            if i==0:
+                                in1(1)
+                                in2(0)
+                                in3(0)
+                                in4(0)
+
+                            elif i==1:
+                                in1(1)
+                                in2(1)
+                                in3(0)
+                                in4(0)
+
+                            elif i==2:
+                                in1(0)
+                                in2(1)
+                                in3(0)
+                                in4(0)
+
+                            elif i==3:
+                                in1(0)
+                                in2(1)
+                                in3(1)
+                                in4(0)
+
+                            elif i==4:
+                                in1(0)
+                                in2(0)
+                                in3(1)
+                                in4(0)
+
+                            elif i==5:
+                                in1(0)
+                                in2(0)
+                                in3(1)
+                                in4(1)
+
+                            elif i==6:
+                                in1(0)
+                                in2(0)
+                                in3(0)
+                                in4(1)
+
+                            elif i==7:
+                                in1(1)
+                                in2(0)
+                                in3(0)
+                                in4(1)
+
+                                if i==7:
+                                    i=0
+                                    continue
+                                    i=i+1
+            led(0)
+            time.sleep(30) #thirty second delay
+    time.sleep(1)
